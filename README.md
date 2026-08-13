@@ -571,11 +571,27 @@ cross-kernel ratios stand; absolute microseconds carry CUDA-event granularity.)
 
 Decode ledger against DeepGEMM: 0.3431 (original closure) → 0.3369 (bit-exact tile fix from
 the IKET diagnosis) → 0.3340 (copy-free closure, the PR #4341 workspace-view semantics) vs
-0.3216. The remaining 3.9% is kernel scheduling, not integration overhead or tuning — the two
-open flashinfer PRs the integration path is waiting on (#4341/#4425) shave host/copy
-boundaries we have now already removed from the measurement, and the sglang #31470 data
-attributes DeepGEMM's decode P99 edge to its ring-coupled FC2→combine design. That is the
-next real kernel-work target, and IKET is the tool that will show whether it lands.
+0.3216. A ~25-configuration decode campaign followed (`results/megamoe_ws8_hillclimb.txt`,
+"DECODE SPAM CAMPAIGN"): every remaining knob, wire dtype, and scheduler axis came back flat,
+worse, or apparently pathological.
+
+**The most instructive finding of the campaign** came from chasing those "pathological"
+readings. `in_kernel_fc2_reduce`, the mxfp8 wire, and `num_sched_stages=4` all benched at a
+suspiciously identical ~8.9 ms — 26x slower. An IKET trace of the ikr config told a different
+story: a clean 361 µs launch, with the cross-rank REDG combine costing only ~+2 µs per task
+inside `fc2_epi`. Re-benching with a `dist.barrier` between iterations (serving-like pacing)
+returned all three configs to ~0.34-0.36 ms — and the 9 ms mode instead captured the *default*
+config on that occasion. The megamoe kernel has a **bistable degraded mode** (~9 ms/launch;
+traces show `Dispatch_Barrier` absorbing ~4.7 ms per launch) that launch pacing can trigger on
+any config — a kernel-robustness issue worth reporting upstream, with trace evidence in this
+repository. Without IKET we would have shipped "ikr is 26x slower on B300" as a fact.
+
+Final paced decode table (median of per-rank medians): cutedsl winner-knobs ~0.340 (bit-exact),
+ikr+winner ~0.342, mxfp8 ~0.363, DeepGEMM ~0.324 at m=128; at m=64, ~0.335 vs ~0.321. Verdict:
+DeepGEMM keeps ~4±1% at decode under every harness style, with every tuning/integration/config
+axis on our side exhausted. The residual is combine/dispatch architecture; the remaining
+kernel-work items are a ring-coupled combine that avoids sys-scope NVLink signaling and a fix
+for the bistable degraded mode. Both are IKET-instrumented projects now, not guesses.
 
 **IKET before/after of the winning prefill config** (m=2048, bf16 vs nvfp4 combine wire):
 

@@ -34,6 +34,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tokens", type=int, default=128)
     ap.add_argument("--max-tokens", type=int, default=None)
+    ap.add_argument("--paced", action="store_true",
+                    help="per-iteration dist.barrier + single-launch event timing")
     args = ap.parse_args()
     max_tokens = args.max_tokens or args.tokens
 
@@ -109,13 +111,25 @@ def main() -> None:
     assert torch.isfinite(y).all()
     dist.barrier()
 
-    times = bench_gpu_time(
-        run_once, dry_run_iters=5, repeat_iters=30, enable_cupti=True,
-        use_cuda_graph=False,
-    )
+    if args.paced:
+        start_ev = torch.cuda.Event(enable_timing=True)
+        end_ev = torch.cuda.Event(enable_timing=True)
+        times = []
+        for _ in range(30):
+            dist.barrier()
+            start_ev.record()
+            run_once()
+            end_ev.record()
+            torch.cuda.synchronize()
+            times.append(start_ev.elapsed_time(end_ev))
+    else:
+        times = bench_gpu_time(
+            run_once, dry_run_iters=5, repeat_iters=30, enable_cupti=True,
+            use_cuda_graph=False,
+        )
     times = list(times) if isinstance(times, (list, tuple)) else [float(times)]
     med = sorted(times)[len(times) // 2]
-    print(f"BENCH-DG rank={rank} tokens={n} median_ms={float(med):.4f} n={len(times)}", flush=True)
+    print(f"BENCH-DG rank={rank} tokens={n} paced={args.paced} median_ms={float(med):.4f} n={len(times)}", flush=True)
     dist.barrier()
     symm_buffer.destroy()
     dist.destroy_process_group()

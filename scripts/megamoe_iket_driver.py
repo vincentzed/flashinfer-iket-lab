@@ -96,6 +96,10 @@ def main() -> None:
     ap.add_argument("--y-ref", default=None,
                     help="bitwise-exactness anchor: save y here on first use, "
                          "torch.equal-compare on later runs (per-rank files)")
+    ap.add_argument("--paced", action="store_true",
+                    help="bench with a dist.barrier between iterations (single-launch "
+                         "CUDA-event timing). Needed for configs whose cross-rank "
+                         "flow control (ikr/quantized combine) assumes paced launches.")
     ap.add_argument("--closure", choices=["copy", "view"], default="copy",
                     help="bench closure: 'copy' = nvfp4_mega_moe with owned-y copy; "
                          "'view' = nvfp4_mega_launch_thunk (bare kernel launch, no "
@@ -263,12 +267,24 @@ def main() -> None:
                         )
 
             dist.barrier()
-            # Explicit equal iteration counts on every rank: the kernel has
-            # cross-rank barriers, so auto (time-based) counts would deadlock.
-            times = bench_gpu_time(
-                run_once, dry_run_iters=5, repeat_iters=30, enable_cupti=True,
-                use_cuda_graph=False,
-            )
+            if args.paced:
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                times = []
+                for _ in range(30):
+                    dist.barrier()
+                    start.record()
+                    run_once()
+                    end.record()
+                    torch.cuda.synchronize()
+                    times.append(start.elapsed_time(end))
+            else:
+                # Explicit equal iteration counts on every rank: the kernel has
+                # cross-rank barriers, so auto (time-based) counts would deadlock.
+                times = bench_gpu_time(
+                    run_once, dry_run_iters=5, repeat_iters=30, enable_cupti=True,
+                    use_cuda_graph=False,
+                )
             times = list(times) if isinstance(times, (list, tuple)) else [float(times)]
             med = sorted(times)[len(times) // 2]
             print(

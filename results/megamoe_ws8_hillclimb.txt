@@ -82,3 +82,52 @@ deepgemm re-run same session; logs/megamoe_final_showdown.log):
 TIMING METHOD DISCLOSURE: cupti-python is not installed in this container; every
 bench_gpu_time call in this file fell back to CUDA-event timing (the warning is in the raw
 logs). All cells share the identical method (30 iters, median), so relative claims hold.
+
+DECODE SPAM CAMPAIGN (view closure throughout; baseline = 0.3340 view+winner-knobs;
+no-alpha rule: the copy-free closure itself is flashinfer PR#4341 semantics, not our win.
+Logs: logs/megamoe_decode_spam.log, logs/megamoe_decode_spam2.log):
+  m=128:
+    winner-knobs + load_balance=static      0.3430   worse
+    winner-knobs + flag_batch=8             0.3339   flat (tie)
+    winner-knobs + flag_batch=16            0.3340   flat
+    winner-knobs + non_ubulk_store=False    0.3339   flat (BITEXACT)
+    winner-knobs + cluster=(4,1,1)          HUNG (killed after 40 min; cluster>2 pathological)
+    in_kernel_fc2_reduce (bf16 wire)        8.9048   26x WORSE - REDG combine pathological at decode
+    combine=mxfp8                           8.9037   26x WORSE - quantized wire pathological at decode
+    combine=mxfp8 + winner-knobs            FAILED
+    winner-knobs + num_sched_stages=3       0.3359   worse
+    winner-knobs + num_sched_stages=4       8.9028   pathological (drain machinery)
+    winner-knobs + clc_bundle_size=2        0.3359   worse
+    winner-knobs + clc_bundle_size=4        0.3340   flat
+  m=64:
+    base (heuristic knobs)                  0.3339   (ref anchor; same floor as m=128 - pure weight-BW regime)
+    winner-knobs (tile N=64 + epi 1,2)      0.3300   -1.2% BITEXACT (max|d|=0)
+    deepgemm                                0.3195   deepgemm +3.3% ahead
+  Decode conclusion after ~25 configurations: every tuning and integration axis is
+  exhausted. CuTeDSL floor 0.330-0.334 vs DeepGEMM 0.320-0.322 at m=64/128; the
+  constant ~3.3-3.9% gap is kernel scheduling (weight-load pipelining / fc2 coupling),
+  independent of token count. Kernel-source work is the only remaining lever.
+
+CORRECTION - THE 8.9ms MODE (paced re-bench, logs/megamoe_paced_bench.log +
+IKET trace results/megamoe_m128_ikr_summary.txt):
+The ~8.9-9.1 ms/launch readings are NOT steady kernel costs of ikr/mxfp8/sched4.
+An IKET trace of the ikr config shows a clean 361 us instrumented launch with the
+REDG combine costing only ~+2 us/task inside fc2_epi. With per-iteration
+dist.barrier pacing (serving-like), all configs re-bench normally - and the 9 ms
+mode instead captured the BASE config on that occasion. Verdict: the megamoe
+kernel has a bistable degraded mode (~9 ms/launch, Dispatch_Barrier absorbing
+~4.7 ms/launch in traces) triggered by launch pacing vs its cross-rank
+stage/generation flow control, independent of config. Upstream-reportable, with
+IKET trace evidence.
+
+PACED DECODE TABLE (median of per-rank medians, 30 paced iterations):
+  m=128: cutedsl winner-knobs      ~0.340   (bitexact)
+         cutedsl ikr+winner-knobs  ~0.342   (numerics-trading; REDG ~ flat on B300)
+         cutedsl mxfp8 combine     ~0.363   (slower at decode)
+         deepgemm                  ~0.324
+  m=64:  cutedsl ikr+winner-knobs  ~0.335   vs deepgemm ~0.321
+FINAL DECODE VERDICT: cutedsl best (bitexact) trails deepgemm by ~4+-1% at decode
+under both harness styles. Every tuning, integration, and config axis is exhausted;
+the residual is combine/dispatch architecture. The two kernel-work items that
+remain are (1) a ring-coupled combine that avoids sys-scope NVLink atomics and
+per-launch staging, and (2) fixing the bistable degraded mode above.
