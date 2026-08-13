@@ -1,6 +1,7 @@
 MegaMoE @ DeepSeek-V4-Pro geometry (hidden 7168, inter 3072, 384 experts, top-k 6),
 world_size = 8 (EP8, 48 local experts/rank), 8x B300.
-Median kernel time via flashinfer.testing.bench_gpu_time (CUPTI, 30 iters, 5 warmup),
+Median kernel time via flashinfer.testing.bench_gpu_time (30 iters, 5 warmup; CUDA-event
+timing — cupti-python is absent in this container, see disclosure at the bottom),
 identical iteration counts on every rank (the kernel has cross-rank barriers).
 "bitexact" = torch.equal against the per-rank baseline output saved with --y-ref
 (same seeds, same inputs). Raw logs: logs/megamoe_ws8_bench.log,
@@ -71,3 +72,13 @@ VERDICTS (world_size = 8)
    decode is fc1 weight-TMA bound and the knob space is exhausted - closing the last
    gap needs kernel work (e.g. DeepGEMM-style ring-coupled fc2->combine).
 Both kernels ran their GB200-derived heuristics on B300, plus the sweep shown here.
+
+FINAL SHOWDOWN (copy-free 'view' closure = nvfp4_mega_launch_thunk, PR#4341 semantics;
+deepgemm re-run same session; logs/megamoe_final_showdown.log):
+  128:  cutedsl view+winner-knobs 0.3340 (BITEXACT-VIEW max|d|=0)  vs deepgemm 0.3216  -> deepgemm +3.9%
+ 2048:  cutedsl view+nvfp4        0.5231                          vs deepgemm 0.7506  -> cutedsl -30.3%
+ 4096:  cutedsl view+nvfp4        0.7987                          vs deepgemm 1.3709  -> cutedsl -41.7%
+
+TIMING METHOD DISCLOSURE: cupti-python is not installed in this container; every
+bench_gpu_time call in this file fell back to CUDA-event timing (the warning is in the raw
+logs). All cells share the identical method (30 iters, median), so relative claims hold.

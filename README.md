@@ -555,11 +555,48 @@ workspace-view semantics as open flashinfer PR #4341, which measured +2.6–6% d
 output throughput in sglang #33571). The final numbers below use that copy-free closure for
 CuTeDSL, verified bit-exact against the same reference.
 
-<!--MEGAMOE_VIEW_SHOWDOWN-->
+```
+tokens/rank  cutedsl (copy-free closure, view)      deepgemm (same session)   verdict
+   128       0.3340 ms  (winner knobs, BITEXACT)    0.3216 ms                 deepgemm +3.9%
+  2048       0.5231 ms  (combine=nvfp4)             0.7506 ms                 cutedsl 30.3% faster
+  4096       0.7987 ms  (combine=nvfp4)             1.3709 ms                 cutedsl 41.7% faster
+```
+
+(Raw log: `logs/megamoe_final_showdown.log`. The view closure's output was verified
+`torch.equal` against the same per-rank reference — `BITEXACT-VIEW exact=True max|d|=0`.
+One timing disclosure applies to every benchmark number in this repository: `cupti-python`
+is not installed in this container, so `bench_gpu_time` fell back to CUDA-event timing.
+Every cell used the identical method, 30 measured iterations, medians, so the A/B and
+cross-kernel ratios stand; absolute microseconds carry CUDA-event granularity.)
+
+Decode ledger against DeepGEMM: 0.3431 (original closure) → 0.3369 (bit-exact tile fix from
+the IKET diagnosis) → 0.3340 (copy-free closure, the PR #4341 workspace-view semantics) vs
+0.3216. The remaining 3.9% is kernel scheduling, not integration overhead or tuning — the two
+open flashinfer PRs the integration path is waiting on (#4341/#4425) shave host/copy
+boundaries we have now already removed from the measurement, and the sglang #31470 data
+attributes DeepGEMM's decode P99 edge to its ring-coupled FC2→combine design. That is the
+next real kernel-work target, and IKET is the tool that will show whether it lands.
 
 **IKET before/after of the winning prefill config** (m=2048, bf16 vs nvfp4 combine wire):
 
-<!--MEGAMOE_IKET_BEFORE_AFTER-->
+The bench numbers say nvfp4 combine is faster at prefill; the traces say *why*. Same rank,
+same steady-state launch, m=2048 (full outputs: `results/megamoe_m2048_bf16_summary.txt` /
+`..._nvfp4_summary.txt`):
+
+```
+span                      bf16 combine        nvfp4 combine       change
+token_back  (mean ns)     6134                2025                -67%  <- 4x smaller wire
+fc2_epi     (mean ns)     2095                2578                +23%  <- encoder moved here
+Dispatch_Pull (total us)  180.3               172.5               ~flat
+kernel wall (us)          610.5               577.2               -5.5% (instrumented launch)
+```
+
+The cross-rank push-back span (`token_back`) collapses by 3x when the wire shrinks from bf16
+to NVFP4, and part of the saving is paid back inside `fc2_epi`, which now runs the NVFP4
+encoder. That is the causal chain behind the -11.6% bench delta, read directly off the warps.
+(One more gotcha captured on the way: the nvfp4 IKET run segfaulted on first attempt — the
+sizing pass underestimates this config's per-warp event count; `--max-ts-cnt-per-warp 8192`
+fixed it, matching the "buffer sizing" caveat in the IKET guide.)
 
 ## Step 10: what NCU can see here, with sudo — and what it cannot
 
