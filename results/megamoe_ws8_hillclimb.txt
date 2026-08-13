@@ -289,3 +289,21 @@ the UNPACED gap (7.3 us vs same-window DG): body pacing only -- head fixes
 (incl. the early_internal_init overlap idea) target time that unpaced
 pipelining already hides.
 PENDING (optional): deepgemm --paced anchors for a paced-regime crown claim.
+
+deepgemm PACED anchors (gated idle window, n=30, completes the paced-regime
+comparison; flashinfer branch tip now efe96103 = code-identical rewrite of
+b0e67b5c, one comment line changed):
+  m=128 paced: rank medians 0.3184-0.3256   m=64 paced: 0.3138-0.3214
+READ: deepgemm barely degrades under pacing (paced ~= unpaced 0.3226/0.3195),
+while our base pays 0.3299 -> 0.372-0.387 paced. So our launch carries
+~45-55 us of exposed single-launch head that back-to-back pipelining hides;
+head_weight_prefetch_kb=512 recovers ~70% of it (paced 0.341-0.348) but does
+NOT take the paced crown: deepgemm paced ~0.322 still leads by ~20 us.
+Structural conclusion from the IKET head-baseline trace + this table:
+  (a) unpaced gap (7.3 us same-window) = pipeline-body pacing only;
+  (b) paced gap = the un-prefetchable head remainder (dispatch grid sync +
+      NVLink barrier + skew ~10-20 us) on top of (a);
+  (c) deepgemm's launch structure exposes almost no single-launch head --
+      closing our head machinery cost (not just its DRAM idleness) is the
+      lever for the paced regime; body pacing remains the lever for the
+      unpaced crown.
