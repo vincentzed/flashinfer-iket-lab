@@ -210,3 +210,10 @@ tail_fused_reduce=True; megamoe_kernel.py + token_comm.py):
   Stability: 100 unpaced profile launches + 4x30 unpaced bench + 2x30 paced
   bench with the fused tail, zero hangs, zero 9ms-mode trips, bitexact
   maintained on every checked run.
+  m=64 A/B (same session, view closure, unpaced, rank0 medians):
+    default 0.3267 / tail_fused_reduce 0.3238 / deepgemm 0.3196
+    -> fused cuts the m=64 gap from 10.5us (3.3%, prior 0.3300 vs 0.3195) to
+    4.2us (1.3%). Effect is larger at m=64 because the deleted TopkReduce
+    launch is a fixed cost while the in-kernel reduce shrinks with m.
+    (m=64 numerics: EP2/EP4 oracle PASS with fused; no m=64 EP8 bitexact
+    anchors exist -- m=128 anchors are the bitexact evidence.)
