@@ -131,3 +131,82 @@ under both harness styles. Every tuning, integration, and config axis is exhaust
 the residual is combine/dispatch architecture. The two kernel-work items that
 remain are (1) a ring-coupled combine that avoids sys-scope NVLink atomics and
 per-launch staging, and (2) fixing the bistable degraded mode above.
+
+=== 2026-08-13 KERNEL-INNOVATIONS CAMPAIGN (branch kernel-innovations) ===
+
+Fresh baselines (same session, view closure, unpaced CUDA-event, 30 iters):
+  m=128 EP8: cutedsl winner-knobs 0.3321 / deepgemm 0.3217  (gap 10.4us = 3.1%)
+
+NVLS SWITCH-REDUCED COMBINE PROTO (scripts/nvls_combine_proto.py; isolated
+combine A/B at DSV4-Pro decode geometry, m=128/rank, bf16 wire, topk weights
+pre-applied; torch symm-mem MC via SymmetricBuffer; multimem.ld_reduce
+add.acc::f32.v4.bf16x2; local writer red.relaxed.gpu.add.noftz.v4.bf16x2):
+  Correctness: PASS all ranks, EP4 and EP8 (rel_l2 ~0.0027-0.0030 vs fp32 ref;
+  baseline push+reduce ~0.0017; same bf16-wire numerics class).
+  EP8 paced medians (30 iters; phases include ~5us launch/event overhead):
+    baseline  push=29-31us  reduce=11.2-11.8us   total 39-45us
+    nvls      write=12.5-13.9us  read=30-33us  zero=9us  barrier=14-20us
+              total hot (no zero) 46-52us  -> LOSES by ~7us
+  EP4 read was 20.5us (after ldmc batching; interleaved ld/st was 26us:
+  ldmc asm is side-effecting, compiler cannot hoist -- batch loads manually).
+  Root cause of the loss: multimem.ld_reduce reads all W copies regardless of
+  sparsity. Top-6 of 384 puts data on only ~4.4 of 8 ranks per token -> 1.8x
+  fabric waste (14.7 MB physical per 1.8 MB result per rank, ~470 GB/s/rank
+  effective), and the switch-reduce forces the read into a non-overlappable
+  post-barrier tail, where the baseline push overlaps with fc2 compute.
+  POSITIVE facts worth keeping:
+    - local red.gpu v4.bf16x2 writer = 13.4us for ~11 MB vs 29-31us for the
+      same bytes as NVLink unicast push (2.2x): the PUSH is the expensive,
+      writer-visible half of the current combine.
+    - red.relaxed.gpu.global.add.noftz.v4.bf16x2 compiles+works on B300 (16B
+      local vector bf16 reduction; the sys-scope version is the known-slow one).
+    - multimem barrier arrive+spin (1 CTA) ~5-10us incl. skew at 8 ranks.
+  VERDICT: switch-reduced combine is the wrong shape for sparse MoE combine at
+  EP8 (dense AR is where NVLS pays off). Pivot: fuse the topk reduce into the
+  mega kernel tail (bitexact-eligible), kill the second launch + its overhead.
+
+TAIL-FUSED TOPK REDUCE (flashinfer branch kernel-innovations, knob
+tail_fused_reduce=True; megamoe_kernel.py + token_comm.py):
+  Mechanism: the separate TopkReduce launch is deleted; the same per-element
+  fp32 K-ascending reduce runs on the idle epilogue warps inside the kernel
+  tail, released by a new drain-done NamedBarrier (id 11) that the dispatch
+  warps arrive after the FIRST (drain) nvlink barrier -- the exact point the
+  external TopkReduce's correctness already relied on. Reduce overlaps the
+  shared-counter reset + publish barrier. One kernel launch per step, like
+  DeepGEMM.
+  Numerics: BITEXACT vs the saved winner anchors (out/yref/m128) on all 8
+  ranks, max|d|=0, both warmup-copy and view paths. (fma(v,1.0,acc) == add
+  rounding; load batching/unroll only reorders loads, not accumulation.)
+  Perf (m=128 EP8, view closure, unpaced 30-iter medians, all ranks agree):
+    default (mega + TopkReduce launches)   0.3321 ms
+    tail_fused_reduce                      0.3318 ms   (-0.3us; new best bitexact)
+    deepgemm same session                  0.3217 ms
+  Paced A/B is inconclusive: run-to-run drift +-15-25us swamps the delta
+  (fused 0.376 then 0.350; default 0.348 then 0.356-0.361 across two rounds).
+  DSL gotchas hit: cute.copy into a 2D-rmem row slice kills the process
+  SILENTLY (exit 1, no traceback) -- use a constexpr Python list of 1D rmem
+  tensors; ldmc/LDG batching before the accumulate chain cut the in-kernel
+  reduce 4.6 -> 3.8us (2-unit ILP unroll included; epi warps have the 256-reg
+  budget, do NOT recruit the 72-reg-capped warps 4-7).
+  IKET tail decomposition (new spans Tail_Drain_Barrier / Tail_Publish_Barrier
+  + Tail_Fused_Reduce; traces out/tailbar13):
+    Tail_Drain_Barrier   mean 8-11us, p99 to 37us  -- SKEW ABSORBER (expert
+                         imbalance 718-806 pairs/rank), not machinery
+    Tail_Fused_Reduce    3.7-3.9us
+    Tail_Publish_Barrier ~3us  -- true per-barrier machinery cost
+    Dispatch_Barrier     9-38us head skew absorber (IKET-inflated)
+  VERDICT: the "combine architecture" half of the gap attribution is now
+  measured and closed: deleting the whole separate combine launch moves only
+  -0.3us. The residual ~10us vs deepgemm lives in the pipeline body
+  (fc1/fc2 scheduling tightness), and a multimem barrier swap would save only
+  ~2us/barrier (publish barrier shows machinery is already ~3us). Remaining
+  levers: body scheduling (weight-TMA pacing/ring), not combine.
+  FINAL INTERLEAVED A/B/A/B (same session, back-to-back, rank0 medians, n=30):
+    default 0.3349 / fused 0.3299 / default 0.3340 / fused 0.3317
+    -> tail_fused_reduce wins every pairing by 2.3-5.0us; session spread of
+    both configs ~ +-1.5us.  NEW BEST BITEXACT: 0.3299-0.3318 (vs prior 0.3321;
+    deepgemm 0.3217 same session -> remaining gap ~9-10us, now attributed to
+    pipeline-body scheduling, not combine).
+  Stability: 100 unpaced profile launches + 4x30 unpaced bench + 2x30 paced
+  bench with the fused tail, zero hangs, zero 9ms-mode trips, bitexact
+  maintained on every checked run.
