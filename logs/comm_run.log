@@ -1,0 +1,286 @@
+[run-iket] ============= Dry run application first to collect some info... =============
+W0812 23:10:51.945000 1882 site-packages/torch/distributed/run.py:874] 
+W0812 23:10:51.945000 1882 site-packages/torch/distributed/run.py:874] *****************************************
+W0812 23:10:51.945000 1882 site-packages/torch/distributed/run.py:874] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0812 23:10:51.945000 1882 site-packages/torch/distributed/run.py:874] *****************************************
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Running Blackwell Persistent Dense GEMM test with:Tolerance: 0.1
+
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+mnkl: (2048, 2048, 4096, 1)Use cold L2: False
+
+Fused AllReduce Op: two_shot
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+exec_time: 633.7599754333496
+rank 3: gemm+two_shot allreduce OK
+rank 5: gemm+two_shot allreduce OK
+rank 7: gemm+two_shot allreduce OK
+rank 0: gemm+two_shot allreduce OK
+rank 4: gemm+two_shot allreduce OK
+rank 1: gemm+two_shot allreduce OK
+rank 6: gemm+two_shot allreduce OK
+rank 2: gemm+two_shot allreduce OK
+[run-iket] Auto-computed context buffer size: 0.01 GB (9,149,952 bytes)
+[run-iket] ============= Run application for real profiling... =============
+W0812 23:11:12.699000 2089 site-packages/torch/distributed/run.py:874] 
+W0812 23:11:12.699000 2089 site-packages/torch/distributed/run.py:874] *****************************************
+W0812 23:11:12.699000 2089 site-packages/torch/distributed/run.py:874] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0812 23:11:12.699000 2089 site-packages/torch/distributed/run.py:874] *****************************************
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+Running Blackwell Persistent Dense GEMM test with:
+mnkl: (2048, 2048, 4096, 1)
+AB dtype: TFloat32, C dtype: Float32, Acc dtype: Float32
+Matrix majors - A: k, B: k, C: n
+Mma Tiler (M, N): (128, 128), Cluster Shape (M, N): (1, 1)
+2CTA MMA instructions: False
+Use TMA Store: False
+Tolerance: 0.1
+Warmup iterations: 0
+Iterations: 1
+Skip reference checking: False
+Use cold L2: False
+Fused AllReduce Op: two_shot
+exec_time: 518.8480019569397
+rank 4: gemm+two_shot allreduce OK
+rank 0: gemm+two_shot allreduce OK
+rank 2: gemm+two_shot allreduce OK
+rank 6: gemm+two_shot allreduce OK
+rank 5: gemm+two_shot allreduce OK
+rank 3: gemm+two_shot allreduce OK
+rank 1: gemm+two_shot allreduce OK
+rank 7: gemm+two_shot allreduce OK
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x872.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x872.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x872.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x872.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x872.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x875.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x875.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x875.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x875.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x875.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x871.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x871.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x871.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x871.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x871.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x870.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x870.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x870.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x870.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x870.html
+[run-iket] Warning: decoded_results.json missing stringTable or locationTable. This may indicate an older C++ injection library was used.
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x829.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x829.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x829.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x829.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x829.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x876.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x876.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x876.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x876.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x876.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x874.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x874.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x874.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x874.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x874.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x873.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x873.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x873.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x873.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x873.html
+[run-iket] Dumped perfetto trace to /home/brayden/iket-lab/out/comm/iket_pid_0x86f.pftrace
+[run-iket] Dumped json trace to /home/brayden/iket-lab/out/comm/iket_pid_0x86f.trace.json
+[run-iket] Dumped compressed trace to /home/brayden/iket-lab/out/comm/iket_pid_0x86f.pftrace.gz
+[run-iket] Dumped perfetto HTML viewer to /home/brayden/iket-lab/out/comm/iket_pid_0x86f.html
+[run-iket] To view: cd /home/brayden/iket-lab/out/comm && python3 -m http.server 8080 , then open http://localhost:8080/iket_pid_0x86f.html
+[run-iket] Removing intermediate output directory: /home/brayden/iket-lab/out/comm/tracker
+[run-iket] Removing intermediate output directory: /home/brayden/iket-lab/out/comm/gen-config
+[run-iket] Removing intermediate output directory: /home/brayden/iket-lab/out/comm/iket
