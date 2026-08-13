@@ -217,3 +217,75 @@ tail_fused_reduce=True; megamoe_kernel.py + token_comm.py):
     launch is a fixed cost while the in-kernel reduce shrinks with m.
     (m=64 numerics: EP2/EP4 oracle PASS with fused; no m=64 EP8 bitexact
     anchors exist -- m=128 anchors are the bitexact evidence.)
+
+================================================================================
+2026-08-13 Campaign 3: IKET head-window kernel work
+================================================================================
+Directives in force: EP8-only decisions; A/B only on a fully idle box, both
+arms back-to-back in one idle window.
+
+IKET baseline trace, m=128 EP8, tail_fused_reduce=True, atomic_counter,
+tiler (256,64,256) cluster (2,1,1) (head-baseline trace, 3 profile iters,
+--max-ts-cnt-per-warp 8192 needed -- sizing pass segfaults without it):
+  wall (IKET-inflated) 359-373 us; grid (2,1,74) = 148 CTAs x 384 thr.
+  HEAD FINDING (new): first fc1 weight-TMA span starts p50 54.5 us (rank
+  0x5885) / 68.7 us (rank 0x5887) after the launch's first range, tight
+  across all 148 CTAs (min-max spread < 1.5 us). Head = prologue +
+  Dispatch_Prep (2.9 us) + Dispatch_Barrier (48.4 us single span, incl.
+  software grid sync + NVLink barrier + cross-rank skew) + first produce.
+  DRAM is weight-silent for that entire window while the launch is
+  weight-bandwidth-bound (1.585 GB @ ~60% of the 203 us floor).
+  produce_tile_id (sched warp): 5140 spans, mean 3.6 us, p50 2.0, p99 54 us
+  (span includes cluster-broadcast waits in atomic mode -- wait-inflated,
+  not pure work; consumer-side mailbox starvation NOT directly observable,
+  waits hide inside tma_* spans -- zero >=1us gaps between consecutive
+  weight-TMA spans on warp 5).
+  Tail (already lean): Tail_Drain 4.0 / Tail_Fused_Reduce 4.1 /
+  Tail_Publish 3.4 us means.
+  Dispatch warps at m=128: Pull.* totals < 20 us across ALL warps; parked on
+  NamedBarrier 8 for ~the whole GEMM body (confirms map).
+
+NEW KNOB (implemented, kernel-innovations): head_weight_prefetch_kb
+  Mechanism: during the dispatch-barrier head, each CTA's epilogue thread 0
+  issues ONE cp.async.bulk.prefetch.L2.global for a disjoint CTA-linear slice
+  of the fc1 weight pool (expert-major order = consumption order). 512 KB x
+  148 CTAs = 74 MB of the pool front handed to the async proxy while DRAM is
+  otherwise idle. Pure L2 hint: no completion tracking, bitexact by
+  construction, robust to expert skipping. Files: ptx_helpers.py
+  (bulk_prefetch_l2_raw), kernel_fc12.py (ctor+name+epilogue branch),
+  megamoe_kernel.py (forward+name), shim/nvfp4.py (config+fingerprint),
+  shim/tuner.py (PERF_KNOBS 0/256/512/1024).
+  Gates: EP8 oracle PASS (rel_l2 0.0026 all ranks, knob echoed).
+  Bitexact m=128 EP8 vs out/yref/m128 anchors: [pending]
+  A/B bench (idle-window, interleaved, + paced, + m=64, + same-window
+  deepgemm anchors): [pending]
+
+head_weight_prefetch A/B VERDICT (batch completed 21:04 pre-reboot in a clean
+gated idle window; log survived container restart; post-reboot bitexact
+re-verified 8/8 exact=True max|d|=0 before reading results as valid):
+  m=128 EP8 unpaced (view closure, n=30, interleaved A/B/A/B, all ranks agree):
+    base_1 0.3299 | hwp512_1 0.3318 | base_2 0.3299 | hwp512_2 0.3319
+    hwp1024 0.3298 (neutral) | hwp256 0.3318
+    same-window deepgemm anchor 0.3226
+  m=64 EP8 unpaced: base 0.3238 | hwp512 0.3257 ; deepgemm anchor 0.3195
+  m=128 EP8 PACED: base 0.372-0.387 (rank medians) | hwp512 0.341-0.348
+    -> -35 to -40 us (-9%)
+  m=64 EP8 PACED: base 0.346-0.352 | hwp512 0.335-0.342 -> ~ -10 us
+READ (regime-dependent, both directions recorded):
+  - Unpaced back-to-back: launches pipeline; iteration k+1's weight-silent
+    head hides under iteration k's tail, so there is no head to reclaim AND
+    the prefetch's 74 MB L2 stream contends with the previous launch's tail
+    -> +1.9-2.0 us regression at 256/512 KB. 1024 KB is neutral: 148 MB
+    exceeds L2, the async proxy drops/evicts most of it -> no-op. Base
+    reproduces the sweep agent's post-reboot A/A bar (0.3300) exactly.
+  - Paced single-launch (the serving-decode-step-shaped regime: one MoE
+    launch per layer per step, head NOT hidden by a previous MoE launch):
+    prefetch wins big, -9% m=128. The IKET head diagnosis (54-69 us
+    weight-silent) was correct -- it is just already amortized away by
+    launch pipelining in the unpaced harness.
+DECISION: knob default stays 0 (off) -- the unpaced crown metric must not
+regress. Documented as a paced/serving-regime win. Follow-up candidates for
+the UNPACED gap (7.3 us vs same-window DG): body pacing only -- head fixes
+(incl. the early_internal_init overlap idea) target time that unpaced
+pipelining already hides.
+PENDING (optional): deepgemm --paced anchors for a paced-regime crown claim.
