@@ -307,3 +307,161 @@ Structural conclusion from the IKET head-baseline trace + this table:
       closing our head machinery cost (not just its DRAM idleness) is the
       lever for the paced regime; body pacing remains the lever for the
       unpaced crown.
+
+================================================================================
+CAMPAIGN 3 / T1: WEIGHT-EAGER PIPELINE SPLIT (knob weight_eager_stages) -- WIP
+================================================================================
+MECHANISM (from the IKET head-baseline finding): weights are dispatch-
+independent, but the whole AB pipeline sits behind the sched publish, which
+waits on the dispatch barrier -- so the launch is weight-silent for the whole
+~50-70us head.  Change set:
+  (a) deterministic first scheduler ticket in atomic_counter mode
+      (params flag deterministic_first_tile, on iff weight_eager_stages>0):
+      first ticket := cluster linear id (bidz), NO atomic round trip;
+      later tickets := atom.add + num_persistent_clusters.  Coverage /
+      uniqueness / per-cluster monotonicity preserved (bidz < num_clusters
+      <= any offset ticket).  Static mode already walks from bidz.
+  (b) TMA-A warp pre-fills min(weight_eager_stages, num_ab_stage) AB stages
+      with the PREDICTED first task's fc1 weight k-tiles at kernel start
+      (before its first sched consume).  Prediction = nb=1-per-expert
+      decode: expert = bidz // I1, m-block = bidz % I1 (I1 = 24 at DSV4-Pro
+      geometry), valid for tickets < E_g0*I1 = 528.  Pure A-side identity
+      (phase, expert, m-tile); token-block multiplicity does not matter.
+  (c) reconcile protocol at first consume: TMA-A compares actual vs
+      predicted, publishes a discard count via SMEM flag + NamedBarrier 12
+      (warps 4/5/6).  Match -> TMA-A starts its first fc1 k-loop at
+      k=eager_cnt (gmem indexed by loop var); TMA-B/MMA unchanged (TMA-B's
+      k 0..e-1 B-halves pair with the pre-filled A-halves).  Mismatch ->
+      TMA-B completes the stages with in-bounds dummy B/SFB loads (pool row
+      0, k-tile 0), MMA consume-discards them; discarded stages never feed
+      an accumulating MMA => bitexact by construction on both paths.
+FILES: kernel_fc12.py (ctor+name+storage+warp5/6/mma), fc1_fc2_fuse_sched.py
+  (params flag + internal_init + dynamic-advance offset), megamoe_kernel.py,
+  shim/nvfp4.py (config+fingerprint+ctor), shim/tuner.py (PERF_KNOBS 0/4/8).
+  Default OFF.
+
+DEBUG DETOUR (2h, ledgered per campaign rules): with the knob OFF every
+8-rank run died silently ~25s in (exit 1, zero traceback; NVSHMEM "symmetric
+memory not freed" teardown spam).  we=8 passed everything (oracle rel_l2
+0.0026; m128+m64 y-ref torch.equal max|d|=0 all 8 ranks) -- so knob-off
+looked cursed.  Silent because the CuTeDSL excepthook prints the formatted
+DSL error and sys.exit(1)s, and torchrun swallows the print.  Repro that
+cracked it: SINGLE-PROCESS kernel.aot_compile(max_active_clusters=74) with
+fake tensors (no dist/NVSHMEM/torchrun) surfaces the real error in ~60s:
+  error[TYPE_UNSTABLE_JOIN]: `handle` has type None on one path and
+  ImmutableResourceHandle on another (kernel_fc12 warp5 fc1 k-loop).
+ROOT CAUSE: the eager/prefill/discard blocks assigned `handle` at OUTER warp
+scope; with the knob off those const_expr blocks do not trace, so the AST
+preprocessor threads `handle`=None into the (pristine) k-loops' region join.
+FIX: loop-local names (_we_handle) in all inserted blocks; k_start_first
+loop-tail reset made unconditional (typed on every path; dead constant when
+off).  LESSON for every future const_expr-gated insertion: never introduce
+an outer-scope assignment to a name that pristine loops assign; verify BOTH
+knob states compile via the single-process aot_compile repro
+(scripts-local /tmp/we_repro.py pattern) BEFORE burning 8-rank windows.
+GATES (post-fix): [pending]
+
+================================================================================
+BRUTE FORCE COMBINATORIAL SWEEP (staged factorial; scripts/megamoe_bf_*.py +
+megamoe_sweep.py; ledger repo/results/brute_force_sweep.csv) -- 2026-08-13
+================================================================================
+Design: stage 1 = 120-cell correctness factorial at m=128 EP8 unpaced view
+(5 tiles x 3 token_back x 2 load_balance x 2 non_ubulk x 2 tail_fused; fixed
+cluster (2,1,1), bf16 combine, ikr=False, heuristic perf knobs gh512/fb4/
+efb(1,2)); stage 2 = 324-cell perf grid on the top-5 (full 260 on #1:
+group_hint x flag_batch x all 13 epi_flag_batch; 16-cell screening on #2-#5);
+stage 2b = 13-cell extension on the new perf axis head_weight_prefetch_kb
+(landed mid-sweep by the kernel agent) + one screening-gap cell; stage 3 =
+top-8 x {m64,m128} x {unpaced,paced} x 3 reps + paced pf=512 twins.
+Timing: flashinfer bench_gpu_time(enable_cupti=True) falls back to CUDA
+events in this container (cupti-python absent) -- IDENTICAL method to the
+prior hillclimb baselines, so all deltas are same-method. All configs
+bitexact-gated vs out/yref/m128 + m64 anchors (copy AND view paths).
+
+TOTALS: 595 OK measurement rows, 472 unique configs measured, 60 INVALID
+cells ledgered (validity mirror of tuner.is_valid), 30 FAIL (all = the one
+m=128 paced session that compiled the kernel agent's mid-edit broken tree,
+rerun below), 0 HANG, 0 bitexact violations anywhere.
+
+STAGE 1 (correctness factorial, m=128): winner family = tail_fused_reduce
+x epi_warps x atomic_counter. Main effects (mean over 60 valid cells):
+  tail_fused True -12us; epi_warps -18us vs both dispatch-warp modes;
+  atomic_counter -7us vs static; tile (256,64,256) best (mean 0.3440),
+  (128,64,256) -- NOT in the tuner value set, mission-added -- ties
+  (256,128,256) for 2nd (0.3339 min) and COMPILES+RUNS bitexact.
+  non_ubulk_fc2_store: no effect on the winner corner (ties at 0.3308).
+  tail_fused generalizes: wins its pairing in every tile x balancer combo,
+  not just the hillclimb's single winner cell.
+
+STAGE 2 (perf grid): THE INTERACTION FIND = flag_batch=1.
+  gh=512 w0 grid: fb=1 min 0.3258 / mean 0.3291 vs fb in {2,4,8,16} min
+  0.3296-0.3299 -- fb=1 is -4us min-to-min, and was NEVER tested by the
+  greedy hillclimb or the autotune candidate set (both only fb in {4,8}).
+  group_hint monotonic: 512 (0.3258) > 256 (0.3277) > 128 (0.3359) >> 64
+  (0.3852; and gh=64 flips the fb preference -- fb=1 also wins there).
+  epi_flag_batch nearly flat among small values at fb=1 ((1,1)/(1,2)/(1,4)
+  tie 0.3258). Screening sets #2-#5 (fb in {2,8} by design): none beat #1;
+  gap closed by s2b-x00 (nub=False twin at fb=1) which ties 0.3258.
+  Cross-reboot replication (120 duplicated cells): p50 |d| 0.9us, p90
+  2.3us -> noise band ~2.5us for single medians.
+
+STAGE 2b (head_weight_prefetch_kb 256/512/1024 on the champion): NULL in
+unpaced decode (pf=256/1024 tie 0.3258 exactly, pf=512 0.3268 ~ noise) --
+matches the kernel agent's own A/B (launch pipelining hides the head
+window unpaced). Paced twins in stage 3: inconclusive (inside paced drift; see below).
+
+STAGE 3 (finals, 3 reps, mean [min]):
+  m=128 unpaced: 0.3258 [0.3258], spread 0.1us -- CHAMPION
+    knobs: mma (256,64,256), cluster (2,1,1), epi_warps, atomic_counter,
+    non_ubulk True, tail_fused True, ikr False, gh 512, fb 1, efb (1,4)
+    [(1,1)/(1,2) statistically identical]
+  m=64 unpaced: 0.3236 [0.3236], spread 0.0us -- same knob family (efb
+    (1,1)); the m=64 and m=128 winners are the SAME config family, unlike
+    the token-count-keyed heuristic profiles.
+  m=64 paced: 0.3349-0.3358; pf=512 twin inconclusive at m=64 (0.3360 vs
+    0.3358 base, inside paced run-to-run drift).
+  m=128 paced: 0.3398 [0.3385] position-controlled (champion x3 in one
+    session; nub=False twin 0.3409 -- identical within noise). PACED
+    SESSION-POSITION ARTIFACT found and documented: the first ~3 configs of
+    a multi-config paced session read ~+30us (0.370 vs 0.340 for the SAME
+    champion config; 30/30 rows bitexact regardless) -- clocks/warmup ramp.
+    Cross-position paced rankings are confounded; unpaced (5 dry + 30
+    CUPTI-fallback iters) is the decision metric, matching the hillclimb's
+    'paced A/B inconclusive' verdict. pf=512 paced twins land inside the
+    drift band -- the kernel agent's paced -35us prefetch claim is neither
+    confirmed nor refuted by this design (their interleaved A/B is the
+    right instrument for it). Same-day deepgemm paced anchors (their
+    8ec0925): 0.318-0.326 m=128 -- deepgemm also holds the paced crown
+    (our position-controlled 0.3398).
+  Oracle on champion (m=64, EP8): PASS rel_l2=0.0026 all 8 ranks (gate
+    0.03; equals the kernel agent's reference value for this tree).
+  Note: the m=128 paced rerun, paced control, and oracle ran on a PRISTINE
+    read-only git-archive copy of committed efe96103 (PYTHONPATH override;
+    rows stamped efe96103-pristine) because the live worktree was mid-edit
+    and non-compilable at the time -- zero mutation of the shared tree.
+
+VERDICT vs baselines (m=128 / m=64 unpaced, view closure, rank0 medians):
+  prior best bitexact (hillclimb):    0.3299-0.3318 / 0.3238
+  BRUTE FORCE champion:               0.3258         / 0.3236
+    = -4.1 to -6.0us vs prior best at m=128; -0.2us at m=64 (m=64 was
+    already near-saturated; the win is fb=1+efb, concentrated at m=128)
+  deepgemm rival (same-window):       0.3226         / 0.3195
+    -> gap cut from ~8-10us to 3.2us (1.0%) at m=128; 4.1us (1.3%) at m=64.
+    DeepGEMM is NOT beaten; the remaining gap sits in the pipeline body
+    (fc1/fc2 scheduling), consistent with the hillclimb's IKET attribution.
+
+MECHANISM READ (why fb=1 wins at decode): flag_batch batches the token-back
+readiness flags; at m=128/rank the per-expert token counts are tiny (~2
+tokens/expert avg), so batching flags delays the first combine-eligible
+tokens with no amortization payback -- finer-grained (fb=1) flag publishing
+lets the epi-warp token-back start earlier. Consistent with fb=1 also
+winning at gh=64 and with epi_flag_batch being flat (epi flags are already
+per-tile-fine at this size).
+
+Campaign attribution: kernel tree moved under the sweep (665c5976 ->
+b0e67b5c -> efe96103 (+3 uncommitted dirty states during stage 3)); every
+CSV row carries commit+dirty-sha; A/A checks at each boundary showed the
+champion invariant (0.3300-0.3309 across 665c5976/b0e67b5c; 0.3258 across
+efe96103 dirty states 862174b7/6b52d3ad). head_weight_prefetch_kb=0 in all
+stage-1/2 rows (knob landed defaulted-off).
+================================================================================
