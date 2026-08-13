@@ -1,0 +1,73 @@
+MegaMoE @ DeepSeek-V4-Pro geometry (hidden 7168, inter 3072, 384 experts, top-k 6),
+world_size = 8 (EP8, 48 local experts/rank), 8x B300.
+Median kernel time via flashinfer.testing.bench_gpu_time (CUPTI, 30 iters, 5 warmup),
+identical iteration counts on every rank (the kernel has cross-rank barriers).
+"bitexact" = torch.equal against the per-rank baseline output saved with --y-ref
+(same seeds, same inputs). Raw logs: logs/megamoe_ws8_bench.log,
+logs/megamoe_ws8_sweep2.log, logs/megamoe_bitexact_sweep.log, logs/megamoe_round3.log,
+logs/megamoe_deepgemm_bench.log.
+
+DECODE, 128 tokens/rank
+config                                             median_ms   vs base   bitexact
+----------------------------------------------------------------------------------
+cutedsl bf16-combine, heuristic knobs      BASE      0.3431       --       (ref)
+cutedsl combine=nvfp4                                0.3524     +2.7%      no (wire change)
+knob token_back=standalone_warps                     0.3596     +4.8%      not checked (round 1)
+knob token_back=reuse_dispatch_warps                 0.3585     +4.5%      not checked (round 1)
+knob flag_batch=16                                   0.3431      0.0%      not checked (round 1)
+knob group_hint=None                                 0.4065    +18.5%      not checked (round 1)
+knob load_balance_mode=static                        0.3533     +3.0%      YES (max|d|=0)
+knob mma_tiler=(256,64,256)                          0.3371     -1.7%      YES (max|d|=0)
+knob epi_flag_batch=(1,2)                            0.3430     -0.0%      YES (max|d|=0)
+knob epi_flag_batch=(4,4)                            0.3440     +0.3%      YES (max|d|=0)
+knob flag_batch=2                                    0.3431      0.0%      YES (max|d|=0)
+knob group_hint=256                                  0.3492     +1.8%      YES (max|d|=0)
+knob group_hint=128                                  0.3616     +5.4%      YES (max|d|=0)
+tiler(256,64,256)+epi_flag(1,2)          WINNER      0.3369     -1.8%      YES (max|d|=0)
+tiler(256,64,256)+flag_batch=2                       0.3370     -1.8%      YES (max|d|=0)
+tiler(256,64,256)+epi_flag(1,1)                      0.3370     -1.8%      YES (max|d|=0)
+tiler(128,64,256)                                    0.3420     -0.3%      YES (max|d|=0)
+knob cluster=(1,1,1)                                 FAILED (incompatible with 256-M tile)
+deepgemm fp8xfp4 megamoe                             0.3217     -6.2%      n/a (different kernel,
+                                                                           fp8-activation wire)
+
+PREFILL, 2048 tokens/rank
+config                                             median_ms   vs base   bitexact
+----------------------------------------------------------------------------------
+cutedsl bf16-combine                       BASE       0.5992       --       (ref)
+cutedsl combine=nvfp4                     WINNER      0.5295    -11.6%      no (combine wire
+                                                                            bf16 -> nvfp4)
+deepgemm fp8xfp4 megamoe                              0.7506    +25.3%      n/a
+
+PREFILL, 4096 tokens/rank
+config                                             median_ms   vs base   bitexact
+----------------------------------------------------------------------------------
+cutedsl bf16-combine                       BASE       0.9371       --       (ref; 0.9380 in round 1)
+cutedsl combine=nvfp4                     WINNER      0.8161    -12.9%      no (combine wire)
+cutedsl bf16 + token_back=standalone                  0.9298     -0.8%      YES (max|d|=0)
+cutedsl bf16 + flag_batch=16                          0.9605     +2.5%      YES (max|d|=0)
+cutedsl bf16 + epi_flag_batch=(4,4)                   0.9423     +0.6%      YES (max|d|=0)
+cutedsl bf16 + in_kernel_fc2_reduce                   0.9555     +2.0%      no (nondeterministic
+                                                                            REDG order)
+cutedsl nvfp4 + flag_batch=16                         0.8427     -10.1%     (worse than plain nvfp4)
+cutedsl nvfp4 + group_hint=None                       1.0824     +15.5%     worse
+cutedsl nvfp4 + token_back=standalone                 FAILED (quantized combine incompatible)
+deepgemm fp8xfp4 megamoe                              1.3620    +45.3%      n/a
+
+VERDICTS (world_size = 8)
+1. Numerics-preserving (bitwise-exact) hillclimb: decode -1.8% (tile N 128->64 +
+   epi_flag_batch (1,2)); prefill bf16 -0.8% (standalone token-back). Every accepted
+   row verified torch.equal max|d|=0 against the baseline outputs.
+2. Numerics-trading hillclimb (combine wire bf16 -> nvfp4, disclosed): -11.6% at 2048,
+   -12.9% at 4096 - this clears the >=10% target. The wire change quantizes the
+   per-topk fc2 terms to NVFP4 before cross-rank push-back (upstream's measured
+   quality cost on GB200: ~1.8pt extra rel-L2 vs the bf16 wire; GSM8K-neutral in
+   sglang PR #31470).
+3. vs DeepGEMM megamoe (DeepSeek's own kernel, fp8-activation wire - NOT bit-comparable,
+   both are real DSV4 serving configs): CuTeDSL wins prefill decisively on B300
+   (-29.5% at 2048, -40.1% at 4096, vs deepgemm's numbers), including the 2048 case
+   the sglang PR #31470 sweep had CuTeDSL losing before autotune. DeepGEMM keeps a
+   4.5% decode edge over our best bit-exact config (0.3217 vs 0.3369); IKET shows
+   decode is fc1 weight-TMA bound and the knob space is exhausted - closing the last
+   gap needs kernel work (e.g. DeepGEMM-style ring-coupled fc2->combine).
+Both kernels ran their GB200-derived heuristics on B300, plus the sweep shown here.
